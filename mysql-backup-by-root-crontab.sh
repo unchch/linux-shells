@@ -1,5 +1,6 @@
 #!/bin/bash
 
+# https://github.com/qidizi/linux-shells/blob/master/mysql-backup-by-root-crontab.sh
 # 请把本文件加入root的tabcron,比如:
 # 每天03点自动备份mysql数据库
 # 0 03 * * * /home/backup/mysql-backup-by-root-crontab.sh
