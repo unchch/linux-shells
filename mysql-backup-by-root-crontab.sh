@@ -58,24 +58,30 @@ smtpHost="smtp://smtp.qq.com:25"
 
 #=================配置结束行===============
 
+
+
+
+
+SH_START=$(date +%s)
 shName=$(basename $0)
 shLogPath="/var/log/${shName}.log"
 echo -e "By ${0} @ $(date "+%F %T")\n" > $shLogPath
 
 function myExit(){
     exitCode=$1
-    appendLog "退出脚本时间:$(date +%F/%T)"
+    SH_TIME=$(expr $(date +%s) - $SH_START)
+    appendLog "脚本耗时${SH_TIME}秒"
     appendLog "服务器IP信息:\n$(ip -4 -o addr 2>&1)"
     ver=$(mailx -V 2>&1)
 
     if [ "$?" -ne "0" ];then
         appendLog "用来通过smtp发送email的命令mailx无法使用,请安装,如centos使用yum install mailx,注意必须是 Heirloom mailx这个版本,跳过发送email通知的步骤,正确安装mailx后就可以收到email通知了,测试时出错信息:${ver}"
     else
-                startTime="$(date +%F/%T)"
+        mailStart=$(date +%s)
         #发送email
         mailInfo=$(cat ${shLogPath} | mailx -v -s "${smtpSubject}" -S from=${smtpFrom}  -S smtp-auth=login -S smtp=${smtpHost} -S smtp-auth-user=${smtpUser} -S smtp-auth-password="${smtpPwd}" ${smtpTo} 2>&1)
         # 无法附加发送过程的日志给email通知中,所以,只能保存到日志中,如果需要了解email的交互过程,请到日志文件中查看
-        appendLog "使用mailx通过smtp发送email的耗时:从 ${startTime} 至 $(date +%F/%T);交互记录如下:\n\n${mailInfo}"
+        appendLog "使用mailx通过smtp发送email的耗时$(expr $(date +%s) - $mailStart)秒;交互记录如下:\n\n${mailInfo}"
     fi
 
     exit $exitCode
@@ -192,14 +198,14 @@ for database in $databases; do
 		fi
 	
         sqlPath="${databaseRoot}${table}.sql"
-        timeStart="$(date +%F/%T)"
+        timeStart=$(date +%s)
         dumpInfo=$(mysqldump --host=127.0.0.1 --user=${mysqlBackupUser} --password="${mysqlBackupPwd}" --dump-date --comments --quote-names --result-file=${sqlPath} --quick  --databases ${database} --tables ${table} 2>&1)
 
         if [ "$?" -ne "0" ];then
             appendLog "尝试使用mysqldump导出数据库${database}中的表 ${table} 失败,终止:${dumpInfo}"
             myExit 11
         else
-            appendLog "数据库 ${database}的表 ${table} dump到文件 ${sqlPath} 成功:${dumpInfo}; 耗时: 从 ${timeStart} 至 $(date +%F/%T)"
+            appendLog "数据库 ${database}的表 ${table} dump到文件 ${sqlPath} 成功:${dumpInfo}; 耗时$(expr $(date +%s) - ${timeStart})秒"
 
             tail --lines=10 "${sqlPath}" |grep "\-\- Dump completed" 2>&1 > /dev/null
 
@@ -223,7 +229,7 @@ sqls=$(ls --almost-all --ignore-backups --indicator-style=slash -1 ${todayRoot}*
 for path in $sqls; do
     sqlDir=$(dirname $path)
     sql=$(basename $path)
-        appendLog "压缩 $path 开始于 $(date +%F/%T)"
+    timeStart=$(date +%s)
     tarInfo=$(tar --create --remove-files --bzip2 --absolute-names --directory="${sqlDir}"   --add-file="${sql}" --file="${path}.tar.bz2")
 
     if [ "$?" -ne "0" ];then
@@ -232,7 +238,7 @@ for path in $sqls; do
         appendLog "压缩成功并删除源文件"
     fi
 
-        appendLog "压缩完成于 $(date +%F/%T)"
+        appendLog "压缩耗时$(expr $(date +%s) - ${timeStart})秒"
 	
 done
 
