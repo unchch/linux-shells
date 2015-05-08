@@ -32,7 +32,7 @@
 #----------mysql备份配置信息-------------
 #数据库连接用户名
 mysqlBackupUser="backuper"
-#数据库连接用户的密码,不要包含'号
+#数据库连接用户的密码,不要包含'号,目前在命令行中输入密码,本人测试的ubuntu下密码会被替换成xxxx,如果防止在进程中暴露,可以my.cnf中指定
 mysqlBackupPwd='password'
 #连接主机总是使用 127.0.0.1的,请配置时注意
 
@@ -86,7 +86,7 @@ function myExit(){
         appendLog "发送email通知需安装Heirloom mailx，出错信息:${ver}"
     else
         mailStart=$(date +%s)
-        #发送email
+        #发送email,目前使用的命令行输入密码的方式会在ps aux下暴露出来,如果需要考虑这个问题,可以研究mailx的选项,使用mail.rc的方式来配置
         mailInfo=$(cat ${shLogPath} | mailx -v -s "${smtpSubject}" -S from=${smtpFrom}  -S smtp-auth=login -S smtp=${smtpHost} -S smtp-auth-user=${smtpUser} -S smtp-auth-password="${smtpPwd}" ${smtpTo} 2>&1)
         # 无法附加发送过程的日志给email通知中,所以,只能保存到日志中,如果需要了解email的交互过程,请到日志文件中查看
         appendLog "发送email通知耗时$(expr $(date +%s) - ${mailStart})秒;交互记录如下:\n\n${mailInfo}"
