@@ -3,12 +3,12 @@
 # 最新版本
 # https://github.com/qidizi/linux-shells/blob/master/mysql-backup-by-root-crontab.sh
 
-# 可以使用以下命令在后台测试:
-# xxxxx.sh & 
+# 后台测试命令
+# xxxxxx.sh &
 
-# 配置root的定时任务crontab,比如:
+# 配置root的crontab -e 定时任务,比如:
 # 每天03点自动备份mysql数据库
-# 0 03 * * * /home/backup/mysql-backup-by-root-crontab.sh
+# 0 03 * * * /home/backup/mysql-backup.sh
 
 # mysql 的备份脚本
 # 备份原理:
@@ -31,9 +31,9 @@
 
 #----------mysql备份配置信息-------------
 #数据库连接用户名
-mysqlBackupUser="backuper"
-#数据库连接用户的密码,不要包含'号,目前在命令行中输入密码,本人测试的ubuntu下密码会被替换成xxxx,如果防止在进程中暴露,可以my.cnf中指定
-mysqlBackupPwd='password'
+mysqlBackupUser="用户名"
+#数据库连接用户的密码,不要包含'号
+mysqlBackupPwd='密码'
 #连接主机总是使用 127.0.0.1的,请配置时注意
 
 # 本shell日志文件路径是/var/log/本shell文件名.log,只保留每次运行的日志
@@ -49,67 +49,124 @@ deleteRootOutDays=30
 
 #smtp发送email通知成败与你的配置和系统条件有关,如果没有收到email通知,请到日志中查找原因
 #smtp发件人的email:mail from命令用到
-smtpFrom="qq@qq.com"
+smtpFrom="qidizi@qq.com"
 #日志的收件人
-smtpTo="qq@qq.com"
+smtpTo="qidizi@qq.com"
 #日志收件标题,注意不要包含'
 smtpSubject='mysql自动备份脚本执行信息'
 #smtp登录用户,qq服务器是完整的email
-smtpUser="qq@qq.com"
+smtpUser="qidizi@qq.com"
 #smtp连接用户的密码,不能包含又引号防止shell出错
-smtpPwd='qq'
+smtpPwd='esmtp密码'
 #smtp://协议是固定的,只需要改变域名和端口即可,注意暂时不考虑兼容ssl连接
-smtpHost="smtp://smtp.qq.com:25"
+smtpHost="smtp.qq.com"
+smtpPort=25
 
 #=================配置结束行===============
 
+# ------functions-------------------
 
+# 参数顺序 "smtp-host" "smtp-port" "smtp-user" "smtp-pwd" "mail-from" "rcpt-to" "标题" "内容"
+function esmtp() {
+        # telnet 二次命令之间需要sleep
+        cmdTest=$(which "telnet" 2>&1);
 
+        if [ "$?" -ne "0" ];then
+                echo 'esmtp函数需要telnet命令,请先安装!';
+                return 1;
+        fi
 
-SH_START=$(date +%s)
-shName=$(basename $0)
-shLogPath="/var/log/${shName}.log"
-echo -e "${0}@$(date "+%F %T")\n" > $shLogPath
+        sleepSec=1;
+
+        (
+                bid=$(date +%s);
+                echo 'ehlo qidizi.com';#打招呼
+                sleep ${sleepSec};
+                echo 'auth login';
+                sleep ${sleepSec};
+                echo ${3}|base64;
+                sleep ${sleepSec};
+                echo ${4}|base64;
+                sleep ${sleepSec};
+                echo 'MAIL FROM: '${5};
+                sleep ${sleepSec};
+                echo 'RCPT TO: '${6};
+                sleep ${sleepSec};
+                echo 'data';
+                sleep ${sleepSec};
+                echo 'MIME-Version: 1.0';
+                echo 'Date: '$(date -R);
+                echo 'Subject: =?UTF-8?B?'$(echo ${7}|base64)'?=';
+                echo 'From: =?UTF-8?B?'$(echo ${5}|base64)'?= <'${5}'>';
+                echo 'To: =?UTF-8?B?'$(echo ${6}|base64)'?= <'${6}'>';
+                echo 'Content-Type: multipart/alternative; boundary='${bid};
+                echo "";
+                echo '--'${bid};
+                echo 'Content-Type: text/plain; charset=UTF-8';
+                echo 'Content-Transfer-Encoding: base64';
+                echo "";
+                echo '你的服务器不支持显示html格式信件内容'|base64;
+                echo '--'${bid};
+                echo 'Content-Type: text/html; charset=UTF-8';
+                echo 'Content-Transfer-Encoding: base64';
+                echo "";
+                echo -e "${8}"|base64;#内容部分需要换行,比如兼容<pre>标签
+                echo '--'${bid}'--';
+                sleep ${sleepSec};
+                echo '.';
+                sleep ${sleepSec};
+                echo 'quit';
+        )|telnet ${1} ${2}
+        return 0;
+}
+
 
 function myExit(){
     exitCode=$1
     appendLog "主机IP信息:\n$(ip -4 -o addr 2>&1)"
     appendLog "脚本总耗时$(expr $(date +%s) - ${SH_START})秒"
-	
-	if [ "${exitCode}" -ne "0" ];then
-		appendLog "异常退出,请根据日志解决问题"
-	fi
-	
-    ver=$(mailx -V 2>&1)
 
-    if [ "$?" -ne "0" ];then
-        appendLog "发送email通知需安装Heirloom mailx，出错信息:${ver}"
-    else
-        mailStart=$(date +%s)
-        #发送email,目前使用的命令行输入密码的方式会在ps aux下暴露出来,如果需要考虑这个问题,可以研究mailx的选项,使用mail.rc的方式来配置
-        mailInfo=$(cat ${shLogPath} | mailx -v -s "${smtpSubject}" -S from=${smtpFrom}  -S smtp-auth=login -S smtp=${smtpHost} -S smtp-auth-user=${smtpUser} -S smtp-auth-password="${smtpPwd}" ${smtpTo} 2>&1)
-        # 无法附加发送过程的日志给email通知中,所以,只能保存到日志中,如果需要了解email的交互过程,请到日志文件中查看
-        appendLog "发送email通知耗时$(expr $(date +%s) - ${mailStart})秒;交互记录如下:\n\n${mailInfo}"
-    fi
+        if [ "${exitCode}" -ne "0" ];then
+                appendLog "异常退出,请根据日志解决问题"
+        fi
+
+
+        mailInfo=$(esmtp ${smtpHost} ${smtpPort} ${smtpUser} ${smtpPwd} ${smtpFrom} ${smtpTo} "${smtpSubject}" "<pre>$(cat ${shLogPath})</pre>" 2>&1);
+        appendLog "发送email通知交互记录如下:\n\n${mailInfo}"
 
     exit $exitCode
 }
 
 # 追加日志
 function appendLog(){
-    echo -e "${1}\n" >> $shLogPath
+	log="${1}";
+	type="${2}";
+	
+	case $type in
+		"1" ) log='<span style="color:red;">'${log}'</span>';; #错误提示,red
+		"2" ) log='<span style="color:orangered;">'${log}'</span>';; #提醒提示
+		"3" ) log='<span style="color:green;">'${log}'</span>';; #安全提示
+	esac
+	
+    echo -e "${log}" >> $shLogPath
 }
+
+# ============functions===============
+SH_START=$(date +%s)
+shName=$(basename $0)
+shLogPath="/var/log/${shName}.log.html"
+echo -e "${0}@$(date "+%F %T")\n" > $shLogPath
 
 if [ ! -e "${backupRoot}" ];then
     mkInfo=$(mkdir -p $backupRoot 2>&1)
 
     if [ "$?" -ne "0" ];then
-        appendLog "创建不存在的mysql备份总目录${backupRoot}:失败,${mkInfo}"
+        appendLog "创建不存在的mysql备份总目录${backupRoot}:失败,${mkInfo}" 1
         myExit 1
     fi
 
 elif [ ! -d "${backupRoot}" ];then
-    appendLog "mysql备份路径${backupRoot}虽存在,但它不是目录"
+    appendLog "mysql备份路径${backupRoot}虽存在,但它不是目录" 1
     myExit 2
 fi
 
@@ -120,7 +177,7 @@ if [ ! -e "${todayRoot}" ];then
     mkInfo=$(mkdir $todayRoot 2>&1)
 
     if [ "$?" -ne "0" ];then
-        appendLog "创建本轮的备份目录${todayRoot}:失败,${mkInfo}"
+        appendLog "创建本轮的备份目录${todayRoot}:失败,${mkInfo}" 1
         myExit 3
     fi
 fi
@@ -128,35 +185,35 @@ fi
 ver=$(mysql --version 2>&1)
 
 if [ "$?" -ne "0" ];then
-    appendLog "mysql命令异常:${ver}"
+    appendLog "mysql命令异常:${ver}" 1
     myExit 4
 fi
 
 ver=$(mysqldump -V 2>&1)
 
 if [ "$?" -ne "0" ];then
-    appendLog "mysqldump命令异常:${ver}"
+    appendLog "mysqldump命令异常:${ver}" 1
     myExit 5
 fi
 
 ver=$(tail --version 2>&1)
 
 if [ "$?" -ne "0" ];then
-    appendLog "tail命令异常:${ver}"
+    appendLog "tail命令异常:${ver}" 1
     myExit 6
 fi
 
 ver=$(tar  --version 2>&1)
 
 if [ "$?" -ne "0" ];then
-    appendLog "tar命令异常:${ver}"
+    appendLog "tar命令异常:${ver}" 1
     myExit 7
 fi
 
 databases=$(mysql --host=127.0.0.1 --user=${mysqlBackupUser}  --password="${mysqlBackupPwd}" --execute="show databases;"  --silent --skip-column-names --unbuffered  2>&1)
 
 if [ "$?" -ne "0" ]; then
-    appendLog "列举全部数据库名称异常:${databases}"
+    appendLog "列举全部数据库名称异常:${databases}" 1
     myExit 8
 else
     appendLog "数据库全部列表:\n${databases}"
@@ -169,7 +226,7 @@ for database in $databases; do
 
     # 属于不需要备份的库
     if [ "$?" -eq "0" ];then
-        appendLog "${database}库指定不备份"
+        appendLog "${database}库指定不备份" 2
         continue
     fi
 
@@ -179,7 +236,7 @@ for database in $databases; do
         mkInfo=$(mkdir $databaseRoot 2>&1)
 
         if [ "$?" -ne "0" ];then
-            appendLog "创建${databaseRoot}库的备份目录异常:${mkInfo}"
+            appendLog "创建${databaseRoot}库的备份目录异常:${mkInfo}" 1
             myExit 9
         fi
     fi
@@ -187,7 +244,7 @@ for database in $databases; do
     tables=$(mysql --host=127.0.0.1 --user="${mysqlBackupUser}"  --password="${mysqlBackupPwd}" --execute="show tables from \`${database}\`;"  --silent --skip-column-names --unbuffered 2>&1)
 
         if [ "$?" -ne "0" ]; then
-                appendLog "列举${database}库 全部表名异常:${tables}"
+                appendLog "列举${database}库 全部表名异常:${tables}" 1
                 myExit 10
         else
                 appendLog "${database}库的全部表名:\n${tables}"
@@ -199,7 +256,7 @@ for database in $databases; do
 
                 # 属于不需要备份的库
                 if [ "$?" -eq "0" ];then
-                        appendLog "${database}库${table}表指定不备份"
+                        appendLog "${database}库${table}表指定不备份" 2
                         continue
                 fi
 
@@ -209,7 +266,7 @@ for database in $databases; do
         dumpInfo=$(mysqldump --host=127.0.0.1 --user=${mysqlBackupUser} --password="${mysqlBackupPwd}" --dump-date --comments --quote-names --result-file=${sqlPath} --quick  --databases ${database} --tables ${table} 2>&1)
 
         if [ "$?" -ne "0" ];then
-            appendLog "mysqldump导出${database}库${table}表异常:${dumpInfo}"
+            appendLog "mysqldump导出${database}库${table}表异常:${dumpInfo}" 1
             myExit 11
         fi
 
@@ -217,17 +274,17 @@ for database in $databases; do
         tail --lines=10 "${sqlPath}" |grep "\-\- Dump completed" 2>&1 > /dev/null
 
         if [ "$?" -ne "0" ];then
-                sok="${sok}无，请登录ssh确认本备份情况"
+                sok=${sok}'<span style="color:red;">无，请登录ssh确认本备份情况</span>'
         else
                 sok="${sok}存在，据此判断备份成功了"
                 tarFile="${sqlFile}.tar.bz2"
                 timeStart=$(date +%s)                sok="${sok};打包压缩${sqlFile}(成功后删除之)成${tarFile}:"
                 tarInfo=$(tar --create --remove-files --bzip2 --absolute-names --directory="${databaseRoot}"   --add-file="${sqlFile}" --file="${databaseRoot}${tarFile}")
 
-                if [ "$?" -ne "0" ];then 
-					sok="${sok}出错,${tarInfo}"
+                if [ "$?" -ne "0" ];then
+                                        sok=${sok}'<span style="color:red;">出错,'${tarInfo}'</span>'
                 else
-					sok="${sok}成功"
+                                        sok="${sok}成功"
                 fi
 
                 sok="${sok},耗时$(expr $(date +%s) - ${timeStart})秒;"
@@ -264,13 +321,13 @@ for bkDir in $daysDir;do
     #如果文件时间小于这个过期时间那么就强制删除整个目录
     if [ "${dirName}" -lt "${outDay}" ];then
         rmInfo=$(rm --force --preserve-root --recursive "${bkDir}" 2>&1)
-		rmOk="成功"
-		
-		if [ "$?" -ne "0" ];then
-			rmOk="失败 -- ${rmInfo}"
-		fi
-		
-        appendLog "备份目录${bkDir}超过 ${deleteRootOutDays}天(${dirName} < ${outDay}):强制删除${rmOk}"
+                rmOk="成功"
+
+                if [ "$?" -ne "0" ];then
+                        rmOk='<span style="color:red;">失败 -- '${rmInfo}'</span>'
+                fi
+
+        appendLog "备份目录${bkDir}超过 ${deleteRootOutDays}天(${dirName} < ${outDay}):强制删除${rmOk}" 3
     fi
 
 done
