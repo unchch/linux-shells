@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# 最新版本:https://github.com/qidizi/linux-shells/rsync-crontab-via-ssh.sh
+# 最新版本:https://github.com/qidizi/linux-shells/blob/master/rsync-crontab-via-ssh.sh
 
 # 脚本说明:
 # 这是一个使用rsync进行不同主机之间增量备份文件的定时脚本
