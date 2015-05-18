@@ -45,9 +45,10 @@ smtpPort=25
 
 # 配置区域
 
+
 # 配置root的crontab -e 定时任务,比如:
-# 每天03点自动备份mysql数据库
-# 0 03 * * * /home/backup/rsync-crontab-via-ssh.sh
+# 每天03点自动运行
+# 0 03 * * * /home/backup/abc.sh
 
 
 # rsync参数说明:
@@ -66,6 +67,31 @@ SH_START=$(date +%s)
 shName=$(basename $0)
 # 本脚本运行时的日志路径
 localLog="/var/log/${shName}.log.html"
+
+# 同一时间只允许运行一个实例,否则后面运行的实例会自动退出
+# 必须是绝对路径才允许,这样根据路径来判断是否有其它实例就绝对点
+
+shLists=$(ps -f -C "${shName}");
+# 管理会产生子shell
+shLists=$(echo -e "${shLists}" | grep "${0}");
+shCount=$(echo -e "${shLists}" | wc -l);
+
+if [[ "$0" != /* ]];then
+	echo '<span style="color:red;">请使用绝对路径(以/开头)来运行本shell,而不是:'${0}'</span>' >> $localLog
+	exit 2;
+elif [[ "$0" == */./* ]];then
+	echo '<span style="color:red;">禁止包含相对路径(/./)来运行本shell:'${0}'</span>' >> $localLog
+	exit 3;
+elif [[ "$0" == */../* ]];then
+	echo '<span style="color:red;">禁止包含相对路径(/../)来运行本shell:'${0}'</span>' >> $localLog
+	exit 4;
+# 检测是否已经有实例运行了.
+elif [ "${shCount}" -gt "1" ];then	
+	echo -e '<span style="color:red;">本脚本同一时间只允许运行一个实例,后面启动的实例自动结束,当前实例个数(含自己):'"\n${shLists}"'</span>' >> $localLog
+	exit 5;
+fi
+# 同一时间只允许运行一个实例,否则后面运行的实例会自动退出
+
 echo -e "${0}@$(date "+%F %T")\n" > $localLog
 
 # 测试是否有telnet
@@ -87,7 +113,7 @@ else
 	echo -e '<span style="color:green;">rsync同步完成</span>' >> "${localLog}";
 fi
 
-echo -e "用来保存备份文件机器空间:\n$(df -h)\n\n当前备份目录占用情况:\n$(du -hs ${desDirPath})\n\n备份主机IP信息:\n$(ip -4 -o addr 2>&1)\n\n脚本总耗时$(expr $(date +%s) - ${SH_START})秒" >> "${localLog}";
+echo -e "被备份的目录是:${srcDirPaths}\n\n用来保存备份文件机器空间:\n$(df -h)\n\n当前备份目录占用情况:\n$(du -hs ${desDirPath})\n\n备份主机IP信息:\n$(ip -4 -o addr 2>&1)\n\n脚本总耗时$(expr $(date +%s) - ${SH_START})秒" >> "${localLog}";
 
 
 
