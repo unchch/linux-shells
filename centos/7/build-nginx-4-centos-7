@@ -37,7 +37,7 @@ fi;
 
 function realPath() {
     #得到当前文件的绝对路径,()会fork一个subshell,所以,cd并不会影响parentShell的p                       wd
-    realPath="$(cd `dirname ${0}`; pwd)/$(basename ${0})";
+    realPath="$(cd `dirname ${1}`; pwd)/$(basename ${1})";
     echo ${realPath};
     return 0;
 }
@@ -75,7 +75,10 @@ while true ; do
         echo "找不到目录:${nginxSourceRoot}";
         continue;
     fi
- 
+
+    nginxSourceRoot="$(realPath $nginxSourceRoot)/";
+    echo "nginx源码路径是:${nginxSourceRoot}";
+
     if [[ ! -f "${nginxSourceRoot}configure" ]] || [[ ! -x "${nginxSourceRoot}configure" ]];then 
         echo "当前所在${nginxSourceRoot}目录不是nginx的source根目录,它应该包含一个叫configure文件,并且它应该具备可运行属性,下面列举当前目录文件:";
         ls -al "${nginxSourceRoot}";
@@ -158,7 +161,7 @@ while true ;do
                 echo '本第三方模块依赖libexpat-dev动态库,请确保你已经安装,在centos中,可以使用yum install expat-devel来安装,如果没有安装只会在make步骤,才会出现包含expat关键字的错误提示,并且不是很明确,如果你已经安装过,但是不确定是否安装正确,请留意make的错误提示是不是提示找不到expat,请按任意键继续...';
                 read input;
                 input="break;";
-                appendCfg "--add-module=\"${davExtRoot}\"" '增加webDAV第三方加强模块';
+                appendCfg "--add-module=${davExtRoot}" '增加webDAV第三方加强模块';
                 break;
             fi
 
@@ -311,7 +314,7 @@ if [  "Y" != "${line}" ];then
 fi
 
 echo '开始生成makefile...如果有错误一般会提示类似:./configure: error: ,没有错误就会直接显示当前nginx的所有配置';
-${shellRoot}configure $cfgVars;
+${nginxSourceRoot}configure $cfgVars;
 
 if [[ ! "0" == "$?" ]];then
     echo '生成makefile出错,请解决问题后再继续';
