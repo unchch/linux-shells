@@ -69,7 +69,6 @@ while true ; do
         
     if [[ -z "${nginxSourceRoot}" ]] ;then
         nginxSourceRoot=$shellRoot;
-        break;
     fi
 
     if [[ ! -d "${nginxSourceRoot}" ]];then
