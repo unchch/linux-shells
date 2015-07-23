@@ -46,25 +46,9 @@ shellName="$(basename $0)";
 shellPath="$(realPath $0)";
 shellRoot="$(dirname ${shellPath})/";
 
-function howToDownloadSource () {
-    echo -e "你还没有下载nginx源代码吗?\n\n如何获得nginx的源代码?\
-\n\n\
-*. 假设你当前位于目录:${shellRoot}\n\
-*. 打开网址:http://nginx.org/download/\n\
-*. 选择你喜欢的版本,建议选择稳定的最新版本,比如选择:nginx-1.8.0.tar.gz\n\
-*. 下载到centos系统${shellRoot}中: wget http://nginx.org/download/nginx-1.8.0.tar.gz\n\
-*. 解压:tar -xf nginx-1.8.0.tar.gz\n\
-*. 删除下载包:rm -rf nginx-1.8.0.tar.gz \n\
-*. 复制本编译脚本到源代码根目录:cp ${shellPath} ${shellRoot}nginx-1.8.0/${shellName}\n\
-*. 进入源代码根目录:cd nginx-1.8.0\n\
-*. 修改本脚本成可运行属性:chmod +x ./${shellName}\n\
-*. 再次运行本脚本根据提示操作:./${shellName}\n\
-";
-}
-
 #nginx源代码目录路径
 while true ; do
-    echo -e "\n请输入nginx-source的目录,留空默认为当前目录${shellRoot}:";
+    echo -e "\n请输入nginx-source保存的目录,留空默认为当前目录${shellRoot}:";
     read nginxSourceRoot;
         
     if [[ -z "${nginxSourceRoot}" ]] ;then
@@ -72,26 +56,70 @@ while true ; do
     fi
 
     if [[ ! -d "${nginxSourceRoot}" ]];then
-        echo "找不到目录:${nginxSourceRoot}";
+        echo "不存在这样的目录,请重新指定:${nginxSourceRoot}";
         continue;
     fi
 
     nginxSourceRoot="$(realPath $nginxSourceRoot)/";
-    echo "nginx源码路径是:${nginxSourceRoot}";
+    echo "你指定的nginx源码保存路径是:${nginxSourceRoot}";
 
-    if [[ ! -f "${nginxSourceRoot}configure" ]] || [[ ! -x "${nginxSourceRoot}configure" ]];then 
-        echo "当前所在${nginxSourceRoot}目录不是nginx的source根目录,它应该包含一个叫configure文件,并且它应该具备可运行属性,下面列举当前目录文件:";
-        ls -al "${nginxSourceRoot}";
-        echo '你进入了错误目录运行了此脚本?';
-        howToDownloadSource;
-        continue;
-    fi       
+    if [[ ! -f "${nginxSourceRoot}configure" ]];then
+        echo "找不到nginx的配置可运行文件${nginxSourceRoot}configure";
+        echo '重新指定nginx source目录?[任意键]自动从网络上下载?[D]终止?[CTRL+c];请选择操作[默认D]:';
+        read input;
+
+        if [[ -z "$input" ]];then
+            input="D";
+        fi;
+
+        if [[ ! "D" == "$input" ]];then
+            continue;
+        fi
+        
+        tarUrl="http://nginx.org/download/nginx-1.9.3.tar.gz";
+        while true;do
+            echo -e "使用浏览器打开nginx的source下载网址:http://nginx.org/download/;\n选择你喜欢的版本,\n复制此版本的后缀是tar.gz的下载链接粘贴到此,\n回车让脚本自动下载解压并使用.\n对于版本选择时建议是选择稳定的最新版本\n如果你没有选择就默认下载1.8版本来解压编译使用[默认下载${tarUrl}]:";
+            read input;
+
+            if [[ -z "$input" ]];then
+                input=$tarUrl;
+            fi;
+            
+            tmp="${nginxSourceRoot}nginxSourceTarTmp";
+            wget --output-document="${tmp}" --force-directories      $input;
+
+            if [[ ! "0" == "$?" ]];then
+                echo "下载${input}文件出错,请重试!";
+                continue;
+            fi
+
+            # 尝试解压
+            tar  --overwrite --overwrite-dir --directory="${nginxSourceRoot}" -xf ${tmp};
+
+            if [[ ! "0" == "$?" ]];then
+                echo "解压下载的nginx source tar包出错,请重新下载,再尝试解压";
+                continue;
+            fi
+
+            echo "解压nginx source tar 成功,删除下载的tar包:{$tmp};";
+            rm -rf "${tmp}";
+            nginxSourceRoot="$(realPath $(ls --directory ${nginxSourceRoot}nginx-*))/";
+            echo "已经把nginx-source根目录指向,刚下载完成并解压的nginx-source目录:${nginxSourceRoot}";
+
+            break;
+        done
+    fi
+
+    if [[ ! -x "${nginxSourceRoot}configure" ]]; then
+        chmod +x "${nginxSourceRoot}configure";
+    fi 
     
-    #有效目录了
     break;
 done;
 
-
+echo "当前使用的nginx-source目录路径是:${nginxSourceRoot}";
+# nginx-source的configure好像使用相对路径来获取auto的资源,所以这里只能cd当前目录过去
+cd ${nginxSourceRoot};
 #configure参数串
 cfgVars="";
 
@@ -110,7 +138,7 @@ srcExtRoot="${nginxSourceRoot}src-ext/";
 #创建目录
 if [[ ! -d "${srcExtRoot}" ]];then
     echo "创建外部代码源码目录:${srcExtRoot}";
-    mkdir -p  "${shellRoot}src-ext/";
+    mkdir -p  "${srcExtRoot}";
 fi;
 
 davExtRoot="${srcExtRoot}ngx_http_dav_ext_module/";
@@ -122,9 +150,13 @@ if [[ ! -d "${davExtRoot}" ]];then
 fi;
 
 while true ;do
-    echo -e "\n是否要加入nginx的webDAV模块?[Y/N]: ";
+    echo -e "\n加入nginx的webDAV模块?[Y/N,默认Y]: ";
     read input;
     
+    if [[ -z "$input" ]];then
+        input="Y";
+    fi;
+
     #不加
     if [[ "N" == "$input" ]];then
         break;
@@ -135,8 +167,12 @@ while true ;do
         appendCfg '--with-http_dav_module' '增加webDAV模块';
 
         while true; do
-            echo -e "\n因为nginx本身的DAV模块实现dav方法并不完整,\n缺少PROPFIND和OPTIONS方法,\n是否增加第三方模块以支持完整的webDAV功能?[Y/N]\n";
+            echo -e "\n因为nginx本身的DAV模块实现dav方法并不完整,\n缺少PROPFIND和OPTIONS方法,\n是否增加第三方模块以支持完整的webDAV功能?[Y/N,默认Y]\n";
             read input;
+
+            if [[ -z "$input" ]];then
+                input="Y";
+            fi;
 
             if [[ "Y" == "$input" ]];then
                 davC="https://raw.githubusercontent.com/arut/nginx-dav-ext-module/master/ngx_http_dav_ext_module.c";
@@ -192,21 +228,29 @@ appendCfg "--user=nobody" '指定nignx运行时创建出的子线程无特权用
 appendCfg "--group=nobody" '指定nignx运行时创建出的子线程无特权用户组';
 
 while true;do
-    echo '是否启用代理模块?[Y/N]:';
+    echo '禁用代理模块?[Y/N,默认Y]:';
     read input;
+    
+    if [[ -z "$input" ]];then
+        input="Y";
+    fi;
 
-    if [[ "Y" == "$input" ]];then
+    if [[ "N" == "$input" ]];then
         echo 'nginx默认包含本模块,无需配置';
         break;
-    elif [[ "N" == "$input" ]];then
+    elif [[ "Y" == "$input" ]];then
         appendCfg "--without-http_proxy_module" '指定不包含代理功能模块';
         break;
     fi
 done;
 
 while true;do
-    echo '是否禁用ssl功能,也就是不支持https协议?[Y/N]:';
+    echo '禁用ssl功能,也就是不支持https协议?[Y/N,默认Y]:';
     read input;
+    
+    if [[ -z "$Input" ]];then
+        input="Y";
+    fi;
 
     if [[ "Y" == "$input" ]];then
         appendCfg "--with-http_ssl_module" '包含https的ssl功能模块';
@@ -217,8 +261,12 @@ while true;do
 done;
 
 while true;do
-    echo '是否启用pcre正则功能?[Y/N]:';
+    echo '启用pcre正则功能?[Y/N,默认Y]:';
     read input;
+    
+    if [[ -z "$input" ]];then
+        input="Y";
+    fi;
 
     if [[ "Y" == "$input" ]];then
         tarUrl="http://sourceforge.net/projects/pcre/files/pcre/8.37/pcre-8.37.tar.gz/download";
@@ -262,8 +310,12 @@ done;
 
 
 while true;do
-    echo '是否启用gzip功能?[Y/N]:';
+    echo '启用gzip功能?[Y/N,默认Y]:';
     read input;
+
+    if [[ -z "$input" ]];then
+        input="Y";
+    fi;
 
     if [[ "Y" == "$input" ]];then
         tarUrl="http://zlib.net/zlib-1.2.8.tar.gz";
@@ -304,7 +356,17 @@ while true;do
     fi
 done;
 
-echo -e "配置已经结束!!\n你当前指定的编辑配置指令如下:\n\n.configure ${cfgVars}";
+
+echo -e "配置已经结束!!\n你当前指定的编辑配置指令如下:\n\n.${nginxSourceRoot}configure ${cfgVars}";
+
+echo "如果需要额外的参数请在下面按照configure文件要求的格式输入";
+read input;
+
+if [[ ! -z "$input" ]];then
+    appendCfg "$input" '额外参数';
+    echo -e "增加额外参数后,当前指定的编辑配置指令如下:\n\n.${nginxSourceRoot}configure ${cfgVars}";
+fi;
+
 echo -e "参数是否正确?\n\n输入[Y]继续运行,其它退出\n\n";
 read line;
 
@@ -391,9 +453,33 @@ if [[ ! "0" == "$?" ]];then
     exit 9;
 fi
 
+# service 文件发生变化,需要重载一下
+systemctl daemon-reload;
+
+
 echo -n "nginx内容如下\n$(cat ${service})";
 echo '============写入服务引导文件[nginx.service]成功=========';
 echo '你可以使用命令配置机器自动启动时自动启动服务:systemctl enable nginx; 相反,systemctl disable nginx禁用这个功能';
 
+echo '配置nginx开机自启动?[Y/N]:';
+read input;
+
+if [[ "Y" == "$input" ]];then
+    systemctl enable nginx;
+    echo '配置nginx服务开机自启动操作完成';
+fi;
+
+echo "删除nginx-source目录${nginxSourceRoot}[Y]?";
+read input;
+
+if [[ "Y" == "$input" ]];then
+    rm -rf "${nginxSourceRoot}";
+    echo "已删除nginx-source目录:${nginxSourceRoot}";
+else
+    echo "保留nginx-source目录${nginxSourceRoot}";
+fi;
+
+
 echo '!!!!!全部操作已经完成,你可以使用nginx了!!!!!!!!!';
+
 exit 0;
